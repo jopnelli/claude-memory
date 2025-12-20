@@ -295,3 +295,53 @@ class TestLoadAllChunks:
         chunks = load_all_chunks()
         assert len(chunks) == 1
         assert chunks[0].id == "chunk-1"
+
+    def test_load_deduplicates_by_id(self, temp_dir, monkeypatch):
+        """Load deduplicates chunks with same ID, keeping last occurrence."""
+        storage_dir = temp_dir / "storage"
+        storage_dir.mkdir()
+
+        monkeypatch.setenv("CLAUDE_MEMORY_STORAGE", str(storage_dir))
+
+        import importlib
+        import claude_memory.config
+        importlib.reload(claude_memory.config)
+        import claude_memory.chunker
+        importlib.reload(claude_memory.chunker)
+        from claude_memory.chunker import load_all_chunks
+        from claude_memory.config import CHUNKS_FILE, ensure_dirs
+
+        ensure_dirs()
+
+        # Write chunks with duplicate IDs (simulating git merge conflict)
+        with open(CHUNKS_FILE, "w") as f:
+            # First occurrence
+            f.write(json.dumps({
+                "id": "chunk-1",
+                "text": "User: Hi\n\nAssistant: Hello v1",
+                "timestamp": "2025-01-15T10:00:00Z",
+                "session_id": "test",
+            }) + "\n")
+            # Unique chunk
+            f.write(json.dumps({
+                "id": "chunk-2",
+                "text": "User: Bye\n\nAssistant: Goodbye",
+                "timestamp": "2025-01-15T10:01:00Z",
+                "session_id": "test",
+            }) + "\n")
+            # Duplicate of chunk-1 (should replace first)
+            f.write(json.dumps({
+                "id": "chunk-1",
+                "text": "User: Hi\n\nAssistant: Hello v2",
+                "timestamp": "2025-01-15T10:00:00Z",
+                "session_id": "test",
+            }) + "\n")
+
+        chunks = load_all_chunks()
+
+        # Should have 2 unique chunks
+        assert len(chunks) == 2
+
+        # chunk-1 should have the last version (v2)
+        chunk_1 = next(c for c in chunks if c.id == "chunk-1")
+        assert "Hello v2" in chunk_1.text

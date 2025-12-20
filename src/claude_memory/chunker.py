@@ -124,23 +124,28 @@ def sync_chunks() -> tuple[int, int]:
 
 
 def load_all_chunks() -> list[Chunk]:
-    """Load all chunks from chunks.jsonl."""
+    """Load all chunks from chunks.jsonl, deduplicating by ID.
+
+    If the same chunk ID appears multiple times (e.g., from a git merge),
+    the last occurrence is kept. This makes the system robust to duplicate
+    entries from multi-machine sync conflicts.
+    """
     if not CHUNKS_FILE.exists():
         return []
 
-    chunks = []
+    # Use dict to deduplicate by ID, keeping last occurrence
+    chunks_by_id: dict[str, Chunk] = {}
     with open(CHUNKS_FILE, "r") as f:
         for line in f:
             try:
                 data = json.loads(line)
-                chunks.append(
-                    Chunk(
-                        id=data["id"],
-                        text=data["text"],
-                        timestamp=data["timestamp"],
-                        session_id=data["session_id"],
-                    )
+                chunk = Chunk(
+                    id=data["id"],
+                    text=data["text"],
+                    timestamp=data["timestamp"],
+                    session_id=data["session_id"],
                 )
+                chunks_by_id[chunk.id] = chunk
             except (json.JSONDecodeError, KeyError):
                 continue
-    return chunks
+    return list(chunks_by_id.values())

@@ -98,6 +98,15 @@ To share memory across machines (e.g., laptop and remote VM):
 
 3. Only `chunks.jsonl` syncs between machines. Each machine rebuilds its own embeddings.
 
+4. **First-time setup order** (to avoid merge conflicts):
+   - Machine A: `claude-memory sync` → git commit/push
+   - Machine B: git pull → `claude-memory sync` → git commit/push
+   - Machine A: git pull → `claude-memory rebuild`
+
+   If you do get a merge conflict in `chunks.jsonl`, just accept both versions - the system automatically deduplicates by chunk ID during rebuild.
+
+5. **Index all projects** (optional): Set `CLAUDE_MEMORY_PROJECT="*"` to index conversations from all Claude Code projects, not just the auto-detected one.
+
 ### Auto-sync on Session Start
 
 Add a Claude Code hook in `~/.claude/settings.json`:

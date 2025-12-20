@@ -110,7 +110,8 @@ Add a Claude Code hook in `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "claude-memory sync -q"
+            "command": "(claude-memory sync -q &>/dev/null &)",
+            "timeout": 1
           }
         ]
       }
@@ -119,12 +120,7 @@ Add a Claude Code hook in `~/.claude/settings.json`:
 }
 ```
 
-Or add to your shell config for sync on terminal start:
-
-```bash
-# ~/.bashrc or ~/.zshrc
-claude-memory sync -q
-```
+**Note:** The subshell wrapper `( ... &)` is important. Without it, the sync command blocks Claude startup for several seconds while loading the embedding model. The subshell detaches the process immediately, letting sync run in the background.
 
 ## Commands
 

@@ -4,12 +4,14 @@ Semantic search across Claude Code conversations with git-friendly sync for mult
 
 ## Why
 
-Each Claude Code conversation is isolated. Past decisions, approaches, and context are lost unless manually documented. `claude-memory` preserves:
+Each Claude Code conversation is isolated. Past decisions, approaches, and context are lost unless manually documented. `claude-memory` automatically captures:
 
 - Trade-offs discussed
 - Alternatives considered
 - The "why" behind decisions
 - Context from past sessions
+
+**ADRs vs Episodic Memory**: For intentional documentation, write ADRs or markdown files. Episodic memory captures what you *wouldn't* bother to document—the quick discussions, discarded alternatives, and reasoning that happens in conversation but never makes it to formal docs. Both have their place.
 
 ## Features
 
@@ -77,7 +79,7 @@ Configuration is via environment variables:
 | `CLAUDE_MEMORY_PROJECT` | Claude project directory to index | Auto-detected from home path |
 | `CLAUDE_MEMORY_STORAGE` | Storage directory for chunks and index | `~/.claude-memory` |
 | `CLAUDE_MEMORY_COLLECTION` | ChromaDB collection name | `conversations` |
-| `CLAUDE_MEMORY_MODEL` | Sentence-transformers model | `all-MiniLM-L6-v2` |
+| `CLAUDE_MEMORY_MODEL` | Sentence-transformers model | `all-mpnet-base-v2` |
 
 ### Multi-Machine Setup
 

@@ -19,7 +19,7 @@ def get_project_dir() -> Path:
     home = Path.home()
     if len(home.parts) > 1:
         # Encode path with dashes (e.g., /Users/foo -> -Users-foo, /home/foo -> -home-foo)
-        encoded = "-".join(home.parts[1:])
+        encoded = "-" + "-".join(home.parts[1:])
         return CLAUDE_PROJECTS / encoded
 
     raise ValueError(
@@ -57,8 +57,8 @@ CHROMA_DIR = STORAGE_DIR / "chroma"
 PROCESSED_FILE = STORAGE_DIR / "processed.json"
 COLLECTION_NAME = get_collection_name()
 
-# Embedding model
-EMBEDDING_MODEL = os.environ.get("CLAUDE_MEMORY_MODEL", "all-MiniLM-L6-v2")
+# Embedding model (all-mpnet-base-v2 is recommended for quality)
+EMBEDDING_MODEL = os.environ.get("CLAUDE_MEMORY_MODEL", "all-mpnet-base-v2")
 
 
 def ensure_dirs():

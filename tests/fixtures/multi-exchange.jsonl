@@ -1,0 +1,7 @@
+{"type":"summary","timestamp":"2025-01-15T11:00:00Z","summary":"Multiple exchanges"}
+{"type":"user","uuid":"user-1","timestamp":"2025-01-15T11:00:01Z","sessionId":"session-456","message":{"role":"user","content":"What database should we use?"}}
+{"type":"assistant","uuid":"asst-1","timestamp":"2025-01-15T11:00:02Z","sessionId":"session-456","message":{"role":"assistant","content":[{"type":"text","text":"PostgreSQL is a solid choice for relational data with good JSON support."}]}}
+{"type":"user","uuid":"user-2","timestamp":"2025-01-15T11:01:00Z","sessionId":"session-456","message":{"role":"user","content":"What about caching?"}}
+{"type":"assistant","uuid":"asst-2","timestamp":"2025-01-15T11:01:01Z","sessionId":"session-456","message":{"role":"assistant","content":[{"type":"text","text":"Redis is excellent for caching. It's fast and supports various data structures."}]}}
+{"type":"user","uuid":"user-3","timestamp":"2025-01-15T11:02:00Z","sessionId":"session-456","message":{"role":"user","content":"How do we handle rate limiting?"}}
+{"type":"assistant","uuid":"asst-3","timestamp":"2025-01-15T11:02:01Z","sessionId":"session-456","message":{"role":"assistant","content":[{"type":"text","text":"You can use Redis for rate limiting with sliding window counters."}]}}

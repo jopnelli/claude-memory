@@ -1,0 +1,5 @@
+{"type":"summary","timestamp":"2025-01-15T12:00:00Z","summary":"Conversation with tool calls"}
+{"type":"user","uuid":"user-1","timestamp":"2025-01-15T12:00:01Z","sessionId":"session-789","message":{"role":"user","content":"Read the config file"}}
+{"type":"assistant","uuid":"asst-1","timestamp":"2025-01-15T12:00:02Z","sessionId":"session-789","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/config.json"}},{"type":"text","text":"I'll read that file for you."}]}}
+{"type":"user","uuid":"user-2","timestamp":"2025-01-15T12:00:03Z","sessionId":"session-789","isMeta":true,"message":{"role":"user","content":"Tool result..."}}
+{"type":"assistant","uuid":"asst-2","timestamp":"2025-01-15T12:00:04Z","sessionId":"session-789","message":{"role":"assistant","content":[{"type":"text","text":"The config file contains the database connection settings."}]}}

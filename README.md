@@ -4,14 +4,12 @@ Semantic search across Claude Code conversations with git-friendly sync for mult
 
 ## Why
 
-Each Claude Code conversation is isolated. Past decisions, approaches, and context are lost unless manually documented. `claude-memory` automatically captures:
+Each Claude Code conversation is isolated. Past decisions, approaches, and context are lost unless manually documented. `claude-memory` automatically captures what you *wouldn't* bother to document:
 
-- Trade-offs discussed
-- Alternatives considered
-- The "why" behind decisions
-- Context from past sessions
-
-**ADRs vs Episodic Memory**: For intentional documentation, write ADRs or markdown files. Episodic memory captures what you *wouldn't* bother to document—the quick discussions, discarded alternatives, and reasoning that happens in conversation but never makes it to formal docs. Both have their place.
+- The quick "should we use X or Y?" discussion where you picked X
+- Alternatives you explored but didn't choose
+- Context that felt obvious at the time but you'll forget in 3 months
+- The reasoning that happens in conversation but never makes it to formal docs
 
 ## Features
 

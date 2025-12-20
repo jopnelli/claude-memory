@@ -22,6 +22,12 @@ dependencies = [
     "sentence-transformers>=2.2.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
 [project.scripts]
 claude-memory = "claude_memory.cli:cli"
 
@@ -35,3 +41,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

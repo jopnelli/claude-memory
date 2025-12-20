@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-from .config import PROJECT_DIR
+from .config import get_project_dirs
 
 
 @dataclass
@@ -86,11 +86,12 @@ def parse_conversation(filepath: Path) -> Iterator[Message]:
 
 
 def get_conversation_files() -> list[Path]:
-    """Get all JSONL conversation files from the project directory."""
-    if not PROJECT_DIR.exists():
-        return []
-
-    return sorted(PROJECT_DIR.glob("*.jsonl"))
+    """Get all JSONL conversation files from all project directories."""
+    files = []
+    for project_dir in get_project_dirs():
+        if project_dir.exists():
+            files.extend(project_dir.glob("*.jsonl"))
+    return sorted(files)
 
 
 def parse_all_conversations() -> Iterator[Message]:

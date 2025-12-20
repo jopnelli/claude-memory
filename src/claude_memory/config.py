@@ -7,25 +7,44 @@ from pathlib import Path
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 
 
-def get_project_dir() -> Path:
-    """Get the Claude project directory to index.
+def get_project_dirs() -> list[Path]:
+    """Get the Claude project directories to index.
 
-    Set CLAUDE_MEMORY_PROJECT to override. Otherwise auto-detects based on home path.
+    Set CLAUDE_MEMORY_PROJECT to override:
+    - "*" or "all": Index all project directories
+    - Specific path: Index only that directory
+    - Not set: Auto-detect based on home path
     """
-    if env_path := os.environ.get("CLAUDE_MEMORY_PROJECT"):
-        return Path(env_path).expanduser()
+    env_path = os.environ.get("CLAUDE_MEMORY_PROJECT", "")
+
+    if env_path in ("*", "all"):
+        # Index all project directories
+        if CLAUDE_PROJECTS.exists():
+            return sorted([d for d in CLAUDE_PROJECTS.iterdir() if d.is_dir()])
+        return []
+
+    if env_path:
+        return [Path(env_path).expanduser()]
 
     # Auto-detect based on home directory structure
     home = Path.home()
     if len(home.parts) > 1:
         # Encode path with dashes (e.g., /Users/foo -> -Users-foo, /home/foo -> -home-foo)
         encoded = "-" + "-".join(home.parts[1:])
-        return CLAUDE_PROJECTS / encoded
+        return [CLAUDE_PROJECTS / encoded]
 
     raise ValueError(
         "Could not auto-detect project directory. "
         "Set CLAUDE_MEMORY_PROJECT environment variable."
     )
+
+
+def get_project_dir() -> Path:
+    """Get the first Claude project directory (for backwards compatibility)."""
+    dirs = get_project_dirs()
+    if dirs:
+        return dirs[0]
+    raise ValueError("No project directories found.")
 
 
 def get_storage_dir() -> Path:

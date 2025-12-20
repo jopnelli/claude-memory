@@ -100,18 +100,29 @@ To share memory across machines (e.g., laptop and remote VM):
 
 ### Auto-sync on Session Start
 
-Add to your shell config or a Claude Code hook:
+Add a Claude Code hook in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-memory sync -q"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Or add to your shell config for sync on terminal start:
 
 ```bash
 # ~/.bashrc or ~/.zshrc
-claude-memory sync -q  # -q for quiet mode
-```
-
-Or create a Claude Code session-start hook:
-
-```bash
-# ~/.claude/hooks/session-start
-#!/bin/bash
 claude-memory sync -q
 ```
 

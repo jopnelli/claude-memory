@@ -44,6 +44,12 @@ def empty_file(fixtures_dir):
 
 
 @pytest.fixture
+def long_conversation(fixtures_dir):
+    """Path to long conversation fixture (6 exchanges)."""
+    return fixtures_dir / "long-conversation.jsonl"
+
+
+@pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:

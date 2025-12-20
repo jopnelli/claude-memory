@@ -56,6 +56,25 @@ class TestChunkConversation:
             assert chunk.timestamp
             assert chunk.session_id
 
+    def test_chunk_long_conversation(self, long_conversation):
+        """Long conversation should produce multiple substantial chunks."""
+        from claude_memory.chunker import chunk_conversation
+
+        chunks = list(chunk_conversation(long_conversation))
+
+        # 6 exchanges = 6 chunks
+        assert len(chunks) == 6
+
+        # Each chunk should have substantial content
+        for chunk in chunks:
+            assert len(chunk.text) > 200  # Meaningful content
+            assert "User:" in chunk.text
+            assert "Assistant:" in chunk.text
+
+        # Total text should be substantial
+        total_text = sum(len(c.text) for c in chunks)
+        assert total_text > 5000  # Long conversation has lots of content
+
 
 class TestCreateChunk:
     """Tests for create_chunk function."""

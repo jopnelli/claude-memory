@@ -134,3 +134,34 @@ class TestParseConversation:
         # Only the valid line should be parsed
         assert len(messages) == 1
         assert messages[0].content == "Valid line"
+
+    def test_parse_long_conversation(self, long_conversation):
+        """Parse a longer conversation with multiple exchanges."""
+        messages = list(parse_conversation(long_conversation))
+
+        # 6 user + 6 assistant = 12 messages
+        assert len(messages) == 12
+
+        user_messages = [m for m in messages if m.role == "user"]
+        asst_messages = [m for m in messages if m.role == "assistant"]
+
+        assert len(user_messages) == 6
+        assert len(asst_messages) == 6
+
+        # Check content is substantial (not truncated)
+        # The assistant messages have long technical content
+        total_content_length = sum(len(m.content) for m in asst_messages)
+        assert total_content_length > 3000  # Should have substantial content
+
+    def test_long_conversation_preserves_formatting(self, long_conversation):
+        """Long messages with code blocks should preserve formatting."""
+        messages = list(parse_conversation(long_conversation))
+
+        # Find a message with code
+        code_messages = [m for m in messages if "```" in m.content]
+        assert len(code_messages) > 0  # Should have code blocks
+
+        # Verify code blocks are intact
+        for msg in code_messages:
+            # Every opening ``` should have a closing ```
+            assert msg.content.count("```") % 2 == 0

@@ -145,7 +145,7 @@ Add a Claude Code hook in `~/.claude/settings.json`:
 Add this to your `CLAUDE.md` so Claude knows to use memory:
 
 ```markdown
-## Episodic Memory
+## Claude Memory
 
 Search past conversations with `claude-memory search "query"`.
 

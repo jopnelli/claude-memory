@@ -5,7 +5,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterator
 
-from .config import CHUNKS_FILE, PROCESSED_FILE, ensure_dirs
+from .config import CHUNKS_FILE, PROCESSED_FILE, ensure_dirs, get_all_chunk_files
 from .parser import Message, get_conversation_files, parse_conversation
 
 
@@ -63,18 +63,16 @@ def save_processed(processed: dict[str, str]) -> None:
 
 
 def load_existing_chunk_ids() -> set[str]:
-    """Load IDs of chunks already in chunks.jsonl."""
-    if not CHUNKS_FILE.exists():
-        return set()
-
+    """Load IDs of chunks already in any chunks file (all machines)."""
     ids = set()
-    with open(CHUNKS_FILE, "r") as f:
-        for line in f:
-            try:
-                chunk = json.loads(line)
-                ids.add(chunk.get("id", ""))
-            except json.JSONDecodeError:
-                continue
+    for chunk_file in get_all_chunk_files():
+        with open(chunk_file, "r") as f:
+            for line in f:
+                try:
+                    chunk = json.loads(line)
+                    ids.add(chunk.get("id", ""))
+                except json.JSONDecodeError:
+                    continue
     return ids
 
 
@@ -124,28 +122,31 @@ def sync_chunks() -> tuple[int, int]:
 
 
 def load_all_chunks() -> list[Chunk]:
-    """Load all chunks from chunks.jsonl, deduplicating by ID.
+    """Load all chunks from all chunk files (all machines), deduplicating by ID.
 
+    Reads from both legacy chunks.jsonl and machine-specific chunks-*.jsonl files.
     If the same chunk ID appears multiple times (e.g., from a git merge),
     the last occurrence is kept. This makes the system robust to duplicate
     entries from multi-machine sync conflicts.
     """
-    if not CHUNKS_FILE.exists():
+    chunk_files = get_all_chunk_files()
+    if not chunk_files:
         return []
 
     # Use dict to deduplicate by ID, keeping last occurrence
     chunks_by_id: dict[str, Chunk] = {}
-    with open(CHUNKS_FILE, "r") as f:
-        for line in f:
-            try:
-                data = json.loads(line)
-                chunk = Chunk(
-                    id=data["id"],
-                    text=data["text"],
-                    timestamp=data["timestamp"],
-                    session_id=data["session_id"],
-                )
-                chunks_by_id[chunk.id] = chunk
-            except (json.JSONDecodeError, KeyError):
-                continue
+    for chunk_file in chunk_files:
+        with open(chunk_file, "r") as f:
+            for line in f:
+                try:
+                    data = json.loads(line)
+                    chunk = Chunk(
+                        id=data["id"],
+                        text=data["text"],
+                        timestamp=data["timestamp"],
+                        session_id=data["session_id"],
+                    )
+                    chunks_by_id[chunk.id] = chunk
+                except (json.JSONDecodeError, KeyError):
+                    continue
     return list(chunks_by_id.values())

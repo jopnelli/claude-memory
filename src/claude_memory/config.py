@@ -1,6 +1,7 @@
 """Configuration for claude-memory."""
 
 import os
+import socket
 from pathlib import Path
 
 # Claude Code projects directory
@@ -68,10 +69,55 @@ def get_collection_name() -> str:
     return os.environ.get("CLAUDE_MEMORY_COLLECTION", "conversations")
 
 
+def get_machine_id() -> str:
+    """Get the machine identifier for this host.
+
+    Set CLAUDE_MEMORY_MACHINE_ID to override (useful for distinguishing
+    multiple environments on the same host, e.g., different VMs).
+
+    Returns a sanitized hostname by default.
+    """
+    if env_id := os.environ.get("CLAUDE_MEMORY_MACHINE_ID"):
+        return env_id
+
+    # Use hostname, sanitized for filename safety
+    hostname = socket.gethostname()
+    # Remove domain suffix and sanitize
+    short_name = hostname.split(".")[0].lower()
+    # Replace any unsafe characters
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in short_name)
+
+
+def get_chunks_file() -> Path:
+    """Get the chunks file path for this machine."""
+    machine_id = get_machine_id()
+    return get_storage_dir() / f"chunks-{machine_id}.jsonl"
+
+
+def get_all_chunk_files() -> list[Path]:
+    """Get all chunk files from all machines.
+
+    Returns all files matching chunks-*.jsonl in the storage directory,
+    plus the legacy chunks.jsonl if it exists.
+    """
+    storage = get_storage_dir()
+    files = []
+
+    # Include legacy chunks.jsonl if it exists
+    legacy = storage / "chunks.jsonl"
+    if legacy.exists():
+        files.append(legacy)
+
+    # Include all machine-specific chunk files
+    files.extend(sorted(storage.glob("chunks-*.jsonl")))
+
+    return files
+
+
 # Resolved paths
 PROJECT_DIR = get_project_dir()
 STORAGE_DIR = get_storage_dir()
-CHUNKS_FILE = STORAGE_DIR / "chunks.jsonl"
+CHUNKS_FILE = get_chunks_file()
 CHROMA_DIR = STORAGE_DIR / "chroma"
 PROCESSED_FILE = STORAGE_DIR / "processed.json"
 COLLECTION_NAME = get_collection_name()

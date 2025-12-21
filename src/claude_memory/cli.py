@@ -11,6 +11,8 @@ from .config import (
     STORAGE_DIR,
     COLLECTION_NAME,
     EMBEDDING_MODEL,
+    get_machine_id,
+    get_all_chunk_files,
 )
 
 
@@ -81,10 +83,15 @@ def stats():
     """Show index statistics."""
     store = Store()
     chunks = load_all_chunks()
+    chunk_files = get_all_chunk_files()
 
-    click.echo(f"Chunks file: {CHUNKS_FILE}")
+    click.echo(f"Machine ID: {get_machine_id()}")
+    click.echo(f"Writing to: {CHUNKS_FILE}")
+    click.echo(f"Reading from: {len(chunk_files)} file(s)")
+    for f in chunk_files:
+        click.echo(f"  - {f.name}")
     click.echo(f"ChromaDB dir: {CHROMA_DIR}")
-    click.echo(f"Total chunks in file: {len(chunks)}")
+    click.echo(f"Total chunks in files: {len(chunks)}")
     click.echo(f"Total chunks indexed: {store.count()}")
 
     if chunks:
@@ -107,14 +114,20 @@ def rebuild():
 @cli.command()
 def config():
     """Show current configuration."""
+    chunk_files = get_all_chunk_files()
+
     click.echo("Claude Memory Configuration")
     click.echo("=" * 50)
+    click.echo(f"Machine ID:      {get_machine_id()}")
     click.echo(f"Project dir:     {PROJECT_DIR}")
     click.echo(f"  exists:        {PROJECT_DIR.exists()}")
     click.echo(f"Storage dir:     {STORAGE_DIR}")
     click.echo(f"  exists:        {STORAGE_DIR.exists()}")
     click.echo(f"Chunks file:     {CHUNKS_FILE}")
     click.echo(f"  exists:        {CHUNKS_FILE.exists()}")
+    click.echo(f"All chunk files: {len(chunk_files)} file(s)")
+    for f in chunk_files:
+        click.echo(f"  - {f.name}")
     click.echo(f"ChromaDB dir:    {CHROMA_DIR}")
     click.echo(f"  exists:        {CHROMA_DIR.exists()}")
     click.echo(f"Collection:      {COLLECTION_NAME}")
@@ -123,6 +136,7 @@ def config():
     click.echo("Environment variables:")
     click.echo("  CLAUDE_MEMORY_PROJECT    - Claude project directory to index")
     click.echo("  CLAUDE_MEMORY_STORAGE    - Storage directory (git-sync this)")
+    click.echo("  CLAUDE_MEMORY_MACHINE_ID - Machine identifier (default: hostname)")
     click.echo("  CLAUDE_MEMORY_COLLECTION - ChromaDB collection name")
     click.echo("  CLAUDE_MEMORY_MODEL      - Embedding model name")
 

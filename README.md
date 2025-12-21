@@ -43,17 +43,40 @@ The key insight: **sync text, embed locally**. The `chunks.jsonl` file contains 
 
 ## Installation
 
+Install globally so the command is available in hooks and across shell sessions:
+
 ```bash
-pip install claude-memory
+# Recommended: uses pipx for isolated installation
+pipx install claude-memory
+
+# Alternative: install to user site-packages
+pip install --user claude-memory
 ```
 
-Or install from source:
+After installation, verify it's in your PATH:
+
+```bash
+which claude-memory
+# Should show: ~/.local/bin/claude-memory
+```
+
+If `~/.local/bin` isn't in your PATH, add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Installing from Source
+
+For development or if the package isn't on PyPI yet:
 
 ```bash
 git clone https://github.com/jopnelli/claude-memory.git
 cd claude-memory
-pip install -e .
+pip install --user -e .
 ```
+
+**Note:** Don't install into a virtualenv if you want the hook to work—hooks run in a non-interactive shell where venvs aren't activated.
 
 ## Quick Start
 
@@ -81,31 +104,47 @@ Configuration is via environment variables:
 
 ### Multi-Machine Setup
 
-To share memory across machines (e.g., laptop and remote VM):
+To share memory across machines (e.g., Mac laptop and remote VM):
 
-1. Set `CLAUDE_MEMORY_STORAGE` to a git-synced directory:
+**On each machine:**
+
+1. Install claude-memory:
    ```bash
-   export CLAUDE_MEMORY_STORAGE=~/dotfiles/.claude-memory
-   # or
-   export CLAUDE_MEMORY_STORAGE=~/obsidian-vault/.memory
+   pip install --user claude-memory
+   # Verify it's accessible
+   which claude-memory
    ```
 
-2. Add to your `.gitignore` in that directory:
+2. Set `CLAUDE_MEMORY_STORAGE` to a git-synced directory (add to your shell profile):
+   ```bash
+   export CLAUDE_MEMORY_STORAGE=~/obsidian/.memory
+   # or
+   export CLAUDE_MEMORY_STORAGE=~/dotfiles/.claude-memory
+   ```
+
+3. Add to your `.gitignore` in that directory:
    ```
    chroma/
    processed.json
    ```
 
-3. Only `chunks.jsonl` syncs between machines. Each machine rebuilds its own embeddings.
+4. Run initial sync to download the embedding model (~420MB, one-time):
+   ```bash
+   claude-memory sync
+   ```
 
-4. **First-time setup order** (to avoid merge conflicts):
-   - Machine A: `claude-memory sync` → git commit/push
-   - Machine B: git pull → `claude-memory sync` → git commit/push
-   - Machine A: git pull → `claude-memory rebuild`
+**Syncing between machines:**
 
-   If you do get a merge conflict in `chunks.jsonl`, just accept both versions - the system automatically deduplicates by chunk ID during rebuild.
+Only `chunks.jsonl` syncs via git. Each machine maintains its own embeddings in `chroma/`.
 
-5. **Index all projects** (optional): Set `CLAUDE_MEMORY_PROJECT="*"` to index conversations from all Claude Code projects, not just the auto-detected one.
+First-time setup order (to avoid merge conflicts):
+- Machine A: `claude-memory sync` → git commit/push
+- Machine B: git pull → `claude-memory sync` → git commit/push
+- Machine A: git pull → `claude-memory rebuild`
+
+If you get a merge conflict in `chunks.jsonl`, accept both versions—the system deduplicates by chunk ID during rebuild.
+
+**Optional:** Set `CLAUDE_MEMORY_PROJECT="*"` to index conversations from all Claude Code projects.
 
 ### Auto-sync on Session Start
 
@@ -129,7 +168,26 @@ Add a Claude Code hook in `~/.claude/settings.json`:
 }
 ```
 
-**Note:** The subshell wrapper `( ... &)` is important. Without it, the sync command blocks Claude startup for several seconds while loading the embedding model. The subshell detaches the process immediately, letting sync run in the background.
+**Important details:**
+
+- The subshell wrapper `( ... &)` is critical. Without the parentheses, the sync command blocks Claude startup for 10-20 seconds while loading the embedding model.
+- The command assumes `claude-memory` is in PATH. If you installed to a venv or non-standard location, use the full path:
+  ```json
+  "command": "(~/.local/bin/claude-memory sync -q &>/dev/null &)"
+  ```
+
+**Troubleshooting slow startup:**
+
+1. Verify the command returns instantly:
+   ```bash
+   time (claude-memory sync -q &>/dev/null &)
+   # Should show: real 0m0.000s
+   ```
+
+2. If startup is slow, check:
+   - Missing parentheses in the hook command
+   - `claude-memory` not in PATH (hooks run in non-interactive shells)
+   - First run downloading the embedding model (run `claude-memory sync` manually once first)
 
 ## Commands
 

@@ -115,11 +115,16 @@ To share memory across machines (e.g., Mac laptop and remote VM):
    which claude-memory
    ```
 
-2. Set `CLAUDE_MEMORY_STORAGE` to a git-synced directory (add to your shell profile):
+2. Add `CLAUDE_MEMORY_STORAGE` to your shell profile (`~/.zshrc` or `~/.bashrc`):
    ```bash
-   export CLAUDE_MEMORY_STORAGE=~/obsidian/.memory
-   # or
-   export CLAUDE_MEMORY_STORAGE=~/dotfiles/.claude-memory
+   echo 'export CLAUDE_MEMORY_STORAGE=~/obsidian/.memory' >> ~/.zshrc
+   source ~/.zshrc
+   ```
+
+   Then verify it's set:
+   ```bash
+   claude-memory config | grep "Storage dir"
+   # Should show your chosen path, not ~/.claude-memory
    ```
 
 3. Add to your `.gitignore` in that directory:
@@ -221,6 +226,18 @@ Use when:
 - Before making architectural decisions (check for prior context)
 - When user references past work
 ```
+
+## Troubleshooting
+
+If `claude-memory stats` shows 0 chunks or fewer sessions than expected, run:
+
+```bash
+claude-memory config
+```
+
+**What to check:**
+- If "Storage dir" shows `~/.claude-memory` but data exists elsewhere (e.g., `~/obsidian/.memory`), the `CLAUDE_MEMORY_STORAGE` env var isn't set in the current shell
+- Fix: add the export to `~/.zshrc` or `~/.bashrc` per step 2 in Multi-Machine Setup, then `source` it
 
 ## License
 

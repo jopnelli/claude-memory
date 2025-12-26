@@ -214,7 +214,19 @@ Add a Claude Code hook in `~/.claude/settings.json`:
 
 ## Claude Code Integration
 
-Add this to your `CLAUDE.md` so Claude knows to use memory:
+### Option 1: Install the Skill (Recommended)
+
+Copy the skill to your Claude skills directory:
+
+```bash
+cp -r skill ~/.claude/skills/claude-memory
+```
+
+This enables Claude to automatically search memory when relevant (e.g., when you ask "what did we discuss about X?").
+
+### Option 2: Add to CLAUDE.md
+
+Alternatively, add this to your `CLAUDE.md`:
 
 ```markdown
 ## Claude Memory

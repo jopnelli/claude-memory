@@ -97,7 +97,7 @@ Configuration is via environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CLAUDE_MEMORY_PROJECT` | Claude project directory to index | Auto-detected from home path |
+| `CLAUDE_MEMORY_PROJECT` | Claude project directory to index | All directories in `~/.claude/projects/` |
 | `CLAUDE_MEMORY_STORAGE` | Storage directory for chunks and index | `~/.claude-memory` |
 | `CLAUDE_MEMORY_COLLECTION` | ChromaDB collection name | `conversations` |
 | `CLAUDE_MEMORY_MODEL` | Sentence-transformers model | `all-mpnet-base-v2` |
@@ -149,7 +149,7 @@ First-time setup order (to avoid merge conflicts):
 
 If you get a merge conflict in `chunks.jsonl`, accept both versions—the system deduplicates by chunk ID during rebuild.
 
-**Optional:** Set `CLAUDE_MEMORY_PROJECT="*"` to index conversations from all Claude Code projects.
+**Note:** All project directories are indexed by default. Set `CLAUDE_MEMORY_PROJECT=/specific/path` to limit to a single directory.
 
 ### Auto-sync on Session Start
 

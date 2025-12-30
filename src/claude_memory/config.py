@@ -12,32 +12,18 @@ def get_project_dirs() -> list[Path]:
     """Get the Claude project directories to index.
 
     Set CLAUDE_MEMORY_PROJECT to override:
-    - "*" or "all": Index all project directories
     - Specific path: Index only that directory
-    - Not set: Auto-detect based on home path
+    - Not set: Index all project directories (default)
     """
     env_path = os.environ.get("CLAUDE_MEMORY_PROJECT", "")
-
-    if env_path in ("*", "all"):
-        # Index all project directories
-        if CLAUDE_PROJECTS.exists():
-            return sorted([d for d in CLAUDE_PROJECTS.iterdir() if d.is_dir()])
-        return []
 
     if env_path:
         return [Path(env_path).expanduser()]
 
-    # Auto-detect based on home directory structure
-    home = Path.home()
-    if len(home.parts) > 1:
-        # Encode path with dashes (e.g., /Users/foo -> -Users-foo, /home/foo -> -home-foo)
-        encoded = "-" + "-".join(home.parts[1:])
-        return [CLAUDE_PROJECTS / encoded]
-
-    raise ValueError(
-        "Could not auto-detect project directory. "
-        "Set CLAUDE_MEMORY_PROJECT environment variable."
-    )
+    # Default: index all project directories
+    if CLAUDE_PROJECTS.exists():
+        return sorted([d for d in CLAUDE_PROJECTS.iterdir() if d.is_dir()])
+    return []
 
 
 def get_project_dir() -> Path:

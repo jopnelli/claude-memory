@@ -151,9 +151,9 @@ If you get a merge conflict in `chunks.jsonl`, accept both versions—the system
 
 **Note:** All project directories are indexed by default. Set `CLAUDE_MEMORY_PROJECT=/specific/path` to limit to a single directory.
 
-### Auto-sync on Session Start
+### Auto-sync with Hooks
 
-Add a Claude Code hook in `~/.claude/settings.json`:
+Add Claude Code hooks in `~/.claude/settings.json` to automatically sync conversations:
 
 ```json
 {
@@ -168,14 +168,46 @@ Add a Claude Code hook in `~/.claude/settings.json`:
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-memory sync -q",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(claude-memory sync -q &>/dev/null &)",
+            "timeout": 1
+          }
+        ]
+      }
     ]
   }
 }
 ```
 
+**Hook purposes:**
+
+| Hook | Mode | Purpose |
+|------|------|---------|
+| `SessionStart` | Background | Catch up on missed syncs from other sessions |
+| `PreCompact` | **Blocking** | Index all chunks before context compaction |
+| `SessionEnd` | Background | Final sync when session ends |
+
+**Why PreCompact matters:** When conversations exceed ~80k tokens, Claude Code compresses them into summaries. The `PreCompact` hook runs **synchronously** (not backgrounded) to ensure all granular conversation chunks are indexed before they get summarized. Without this, you'd only have the compressed summary searchable.
+
 **Important details:**
 
-- The subshell wrapper `( ... &)` is critical. Without the parentheses, the sync command blocks Claude startup for 10-20 seconds while loading the embedding model.
+- The subshell wrapper `( ... &)` makes hooks non-blocking. Use it for SessionStart/SessionEnd but NOT for PreCompact.
 - The command assumes `claude-memory` is in PATH. If you installed to a venv or non-standard location, use the full path:
   ```json
   "command": "(~/.local/bin/claude-memory sync -q &>/dev/null &)"

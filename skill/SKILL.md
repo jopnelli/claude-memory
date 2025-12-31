@@ -54,5 +54,8 @@ This returns the most relevant past conversations about authentication, includin
 
 - Results are ranked by semantic similarity, not just keyword matching
 - Lower distance scores indicate higher relevance
-- The index auto-syncs on session start via a Claude Code hook
+- The index auto-syncs via Claude Code hooks:
+  - `SessionStart`: Catches up on missed syncs
+  - `PreCompact`: Indexes chunks before context compaction (prevents data loss)
+  - `SessionEnd`: Final sync when session ends
 - If no results found, run `claude-memory sync` first

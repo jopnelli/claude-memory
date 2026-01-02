@@ -3,7 +3,7 @@
 import click
 
 from .chunker import sync_chunks, load_all_chunks
-from .store import Store
+from .store import Store, get_indexed_count
 from .config import (
     CHUNKS_FILE,
     CHROMA_DIR,
@@ -33,14 +33,24 @@ def sync(quiet: bool):
 
     log("Syncing conversations...")
 
-    # First, sync chunks from conversations
+    # First, sync chunks from conversations (fast - just parses files)
     new_chunks, new_files = sync_chunks()
     if new_chunks > 0:
         log(f"  Added {new_chunks} chunks from {new_files} conversations")
     else:
         log("  No new chunks found")
 
-    # Then, update the ChromaDB index
+    # Early exit: skip embedding model load if no work to do
+    if new_chunks == 0:
+        # Quick check if index is already in sync (without loading embedding model)
+        chunks = load_all_chunks()
+        indexed_count = get_indexed_count()
+        if len(chunks) == indexed_count:
+            log(f"Index up to date ({indexed_count} chunks)")
+            return
+        log(f"  Index out of sync ({len(chunks)} chunks, {indexed_count} indexed)")
+
+    # Only load embedding model if we have work to do
     log("Updating index...")
     store = Store()
     indexed = store.rebuild_index()

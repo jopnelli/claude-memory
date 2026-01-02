@@ -9,6 +9,22 @@ from .config import CHROMA_DIR, COLLECTION_NAME, EMBEDDING_MODEL, ensure_dirs
 from .chunker import load_all_chunks
 
 
+def get_indexed_count() -> int:
+    """Get ChromaDB collection count without loading the embedding model.
+
+    This is a lightweight check that avoids the 3.5s embedding model load.
+    Returns 0 if the collection doesn't exist or on any error.
+    """
+    if not CHROMA_DIR.exists():
+        return 0
+    try:
+        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+        collection = client.get_collection(name=COLLECTION_NAME)
+        return collection.count()
+    except Exception:
+        return 0
+
+
 @dataclass
 class SearchResult:
     """A single search result."""

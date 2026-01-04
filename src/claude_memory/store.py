@@ -33,6 +33,8 @@ class SearchResult:
     session_id: str
     timestamp: str
     distance: float
+    chunk_type: str = "turn"  # "turn" or "summary"
+    turn_index: int = 0  # Position in conversation (-1 for summaries)
 
 
 class Store:
@@ -74,7 +76,12 @@ class Store:
             ids=[c.id for c in new_chunks],
             documents=[c.text for c in new_chunks],
             metadatas=[
-                {"session_id": c.session_id, "timestamp": c.timestamp}
+                {
+                    "session_id": c.session_id,
+                    "timestamp": c.timestamp,
+                    "chunk_type": c.chunk_type,
+                    "turn_index": c.turn_index,
+                }
                 for c in new_chunks
             ],
         )
@@ -104,6 +111,8 @@ class Store:
                         session_id=metadata.get("session_id", ""),
                         timestamp=metadata.get("timestamp", ""),
                         distance=distance,
+                        chunk_type=metadata.get("chunk_type", "turn"),
+                        turn_index=metadata.get("turn_index", 0),
                     )
                 )
 

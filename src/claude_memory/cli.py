@@ -4,6 +4,7 @@ import click
 
 from .chunker import sync_chunks, load_all_chunks
 from .store import Store, get_indexed_count
+from .summarizer import sync_summaries, is_ollama_available, DEFAULT_MODEL
 from .config import (
     CHUNKS_FILE,
     CHROMA_DIR,
@@ -24,7 +25,8 @@ def cli():
 
 @cli.command()
 @click.option("-q", "--quiet", is_flag=True, help="Suppress output (for use in hooks)")
-def sync(quiet: bool):
+@click.option("--no-summaries", is_flag=True, help="Skip automatic summary generation")
+def sync(quiet: bool, no_summaries: bool):
     """Sync new conversations and update the index."""
 
     def log(msg):
@@ -39,6 +41,13 @@ def sync(quiet: bool):
         log(f"  Added {new_chunks} chunks from {new_files} conversations")
     else:
         log("  No new chunks found")
+
+    # Auto-generate summaries if Ollama is available
+    if not no_summaries and new_files > 0 and is_ollama_available():
+        log("Generating summaries...")
+        generated, failed = sync_summaries(quiet=True)
+        if generated > 0:
+            log(f"  Generated {generated} summaries")
 
     # Early exit: skip embedding model load if no work to do
     if new_chunks == 0:
@@ -81,7 +90,8 @@ def search(query: str, num_results: int):
 
     for i, result in enumerate(results, 1):
         click.echo(f"\n{'='*60}")
-        click.echo(f"Result {i} (distance: {result.distance:.4f})")
+        type_label = "📝 Summary" if result.chunk_type == "summary" else f"💬 Turn {result.turn_index + 1}"
+        click.echo(f"Result {i} [{type_label}] (distance: {result.distance:.4f})")
         click.echo(f"Session: {result.session_id}")
         click.echo(f"Time: {result.timestamp}")
         click.echo(f"{'='*60}")
@@ -95,6 +105,10 @@ def stats():
     chunks = load_all_chunks()
     chunk_files = get_all_chunk_files()
 
+    # Count by type
+    turn_chunks = [c for c in chunks if c.chunk_type == "turn"]
+    summary_chunks = [c for c in chunks if c.chunk_type == "summary"]
+
     click.echo(f"Machine ID: {get_machine_id()}")
     click.echo(f"Writing to: {CHUNKS_FILE}")
     click.echo(f"Reading from: {len(chunk_files)} file(s)")
@@ -102,11 +116,16 @@ def stats():
         click.echo(f"  - {f.name}")
     click.echo(f"ChromaDB dir: {CHROMA_DIR}")
     click.echo(f"Total chunks in files: {len(chunks)}")
+    click.echo(f"  Turn chunks: {len(turn_chunks)}")
+    click.echo(f"  Summary chunks: {len(summary_chunks)}")
     click.echo(f"Total chunks indexed: {store.count()}")
 
     if chunks:
         sessions = set(c.session_id for c in chunks)
-        click.echo(f"Unique sessions: {len(sessions)}")
+        click.echo(f"Unique conversations: {len(sessions)}")
+        if summary_chunks:
+            coverage = len(summary_chunks) / len(sessions) * 100
+            click.echo(f"Summary coverage: {coverage:.1f}%")
 
 
 @cli.command()
@@ -119,6 +138,33 @@ def rebuild():
     click.echo("Rebuilding index...")
     indexed = store.rebuild_index()
     click.echo(f"Indexed {indexed} chunks")
+
+
+@cli.command()
+@click.option("-m", "--model", default=DEFAULT_MODEL, help=f"Ollama model to use (default: {DEFAULT_MODEL})")
+@click.option("-q", "--quiet", is_flag=True, help="Suppress per-conversation output")
+def summarize(model: str, quiet: bool):
+    """Generate conversation summaries using Ollama.
+
+    This creates summary chunks for each conversation, enabling high-level
+    search like "what conversations discussed authentication?".
+
+    Requires Ollama to be installed and running.
+    """
+    click.echo(f"Generating conversation summaries using {model}...")
+
+    generated, failed = sync_summaries(model=model, quiet=quiet)
+
+    if generated > 0 or failed > 0:
+        click.echo(f"\nGenerated {generated} summaries ({failed} failed)")
+
+        # Update index with new summaries
+        click.echo("Updating index...")
+        store = Store()
+        indexed = store.rebuild_index()
+        click.echo(f"Indexed {indexed} new chunks")
+    else:
+        click.echo("All conversations already have summaries")
 
 
 @cli.command()

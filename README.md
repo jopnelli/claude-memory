@@ -14,6 +14,8 @@ Each Claude Code conversation is isolated. Past decisions, approaches, and conte
 ## Features
 
 - **Semantic search** - Find relevant past conversations by meaning, not just keywords
+- **Context-aware chunking** - Each turn includes surrounding turns (1 before + 1 after) for bidirectional context
+- **Conversation summaries** - LLM-generated summaries for high-level search (optional, uses Ollama)
 - **Git-friendly sync** - Share memory across machines via any git-synced directory
 - **Local embeddings** - Uses sentence-transformers, no API calls needed
 - **Fast** - ChromaDB vector store for sub-second searches
@@ -151,9 +153,83 @@ If you get a merge conflict in `chunks.jsonl`, accept both versions—the system
 
 **Note:** All project directories are indexed by default. Set `CLAUDE_MEMORY_PROJECT=/specific/path` to limit to a single directory.
 
-### Auto-sync with Hooks
+### Auto-sync Setup
 
-Add Claude Code hooks in `~/.claude/settings.json` to automatically sync conversations:
+#### macOS: launchd + PreCompact Hook (Recommended)
+
+This approach gives you instant startup while ensuring all conversations get indexed:
+
+**1. Create a launchd job that watches for conversation changes:**
+
+```bash
+cat > ~/Library/LaunchAgents/com.claude-memory-sync.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude-memory-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOUR_USERNAME/.local/bin/claude-memory</string>
+        <string>sync</string>
+        <string>-q</string>
+    </array>
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/YOUR_USERNAME/.claude/projects</string>
+    </array>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/claude-memory-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/claude-memory-sync.log</string>
+</dict>
+</plist>
+EOF
+```
+
+Replace `YOUR_USERNAME` with your actual username, and update the path to `claude-memory` if different (check with `which claude-memory`).
+
+**2. Load the job:**
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.claude-memory-sync.plist
+```
+
+**3. Add a PreCompact hook** in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-memory sync -q",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**How it works:**
+
+| Component | Trigger | Purpose |
+|-----------|---------|---------|
+| **WatchPaths** | Conversation files change | Syncs within 60s of any Claude activity |
+| **PreCompact** | Before context compaction | Ensures full conversation indexed before summarization |
+
+The launchd job only runs when Claude is actually in use (files changing), not on a fixed timer. This means no wasted CPU when Claude isn't running, and conversations are indexed even if you Ctrl+C out of a session.
+
+#### Linux/Alternative: Hooks Only
+
+If launchd isn't available, use hooks with background subshells:
 
 ```json
 {
@@ -179,52 +255,14 @@ Add Claude Code hooks in `~/.claude/settings.json` to automatically sync convers
           }
         ]
       }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "(claude-memory sync -q &>/dev/null &)",
-            "timeout": 1
-          }
-        ]
-      }
     ]
   }
 }
 ```
 
-**Hook purposes:**
+**Note:** The subshell wrapper `( ... &)` backgrounds the command for fast startup. Don't use it for PreCompact—that must complete before compaction.
 
-| Hook | Mode | Purpose |
-|------|------|---------|
-| `SessionStart` | Background | Catch up on missed syncs from other sessions |
-| `PreCompact` | **Blocking** | Index all chunks before context compaction |
-| `SessionEnd` | Background | Final sync when session ends |
-
-**Why PreCompact matters:** When conversations exceed ~80k tokens, Claude Code compresses them into summaries. The `PreCompact` hook runs **synchronously** (not backgrounded) to ensure all granular conversation chunks are indexed before they get summarized. Without this, you'd only have the compressed summary searchable.
-
-**Important details:**
-
-- The subshell wrapper `( ... &)` makes hooks non-blocking. Use it for SessionStart/SessionEnd but NOT for PreCompact.
-- The command assumes `claude-memory` is in PATH. If you installed to a venv or non-standard location, use the full path:
-  ```json
-  "command": "(~/.local/bin/claude-memory sync -q &>/dev/null &)"
-  ```
-
-**Troubleshooting slow startup:**
-
-1. Verify the command returns instantly:
-   ```bash
-   time (claude-memory sync -q &>/dev/null &)
-   # Should show: real 0m0.000s
-   ```
-
-2. If startup is slow, check:
-   - Missing parentheses in the hook command
-   - `claude-memory` not in PATH (hooks run in non-interactive shells)
-   - First run downloading the embedding model (run `claude-memory sync` manually once first)
+**Caveat:** SessionEnd hooks don't fire reliably on Ctrl+C, so some short sessions may not sync until the next SessionStart
 
 ## Commands
 
@@ -232,6 +270,7 @@ Add Claude Code hooks in `~/.claude/settings.json` to automatically sync convers
 |---------|-------------|
 | `claude-memory sync` | Parse new conversations, update index |
 | `claude-memory search "query"` | Semantic search (use `-n` for more results) |
+| `claude-memory summarize` | Generate conversation summaries using Ollama |
 | `claude-memory stats` | Show index statistics |
 | `claude-memory rebuild` | Force rebuild index from chunks.jsonl |
 | `claude-memory config` | Show current configuration |
@@ -239,10 +278,41 @@ Add Claude Code hooks in `~/.claude/settings.json` to automatically sync convers
 ## How It Works
 
 1. **Parse**: Reads Claude Code conversation files (`~/.claude/projects/<project>/*.jsonl`)
-2. **Chunk**: Extracts user+assistant exchanges, skipping tool calls and thinking blocks
+2. **Chunk**: Extracts user+assistant exchanges with context from previous turns
 3. **Store**: Appends chunks to `chunks.jsonl` (text + metadata, no embeddings)
 4. **Embed**: Generates embeddings locally using sentence-transformers
 5. **Index**: Stores vectors in ChromaDB for fast similarity search
+
+### Context-Aware Chunking
+
+Each turn is embedded with bidirectional context (1 turn before + 1 turn after). This means when you search for "authentication", you'll find turns where auth was discussed even if the specific turn doesn't mention the word—because the surrounding context captures the full flow.
+
+```
+Turn 3 chunk contains:
+  [Turn 2 - before]
+  ---
+  [Turn 3 - current]
+  ---
+  [Turn 4 - after]
+```
+
+### Conversation Summaries (Automatic)
+
+Summaries are generated automatically during sync when Ollama is available. Each conversation gets a 2-3 sentence summary for high-level search like "which conversations discussed database design?".
+
+**Setup (one-time):**
+```bash
+# Install Ollama (https://ollama.ai)
+brew install ollama
+ollama pull qwen2.5:1.5b
+```
+
+Once set up, `sync` automatically generates summaries for new conversations. Search results show both turn matches (💬) and summary matches (📝).
+
+To generate summaries for existing conversations:
+```bash
+claude-memory summarize
+```
 
 ## Claude Code Integration
 

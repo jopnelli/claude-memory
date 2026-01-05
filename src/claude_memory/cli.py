@@ -136,13 +136,7 @@ def rebuild():
     store.clear()
 
     click.echo("Rebuilding index...")
-
-    def progress(current: int, total: int) -> None:
-        click.echo(f"  Progress: {current}/{total} chunks ({current * 100 // total}%)", nl=False)
-        click.echo("\r", nl=False)
-
-    indexed = store.rebuild_index(progress_callback=progress)
-    click.echo()  # Clear the progress line
+    indexed = store.rebuild_index()
     click.echo(f"Indexed {indexed} chunks")
 
 

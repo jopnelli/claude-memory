@@ -77,11 +77,11 @@ class TestChunkConversation:
 
 
 class TestCreateChunk:
-    """Tests for create_chunk function."""
+    """Tests for create_chunk_with_context function."""
 
     def test_create_chunk_format(self):
         """Chunk text should have correct format."""
-        from claude_memory.chunker import create_chunk
+        from claude_memory.chunker import create_chunk_with_context
         from claude_memory.parser import Message
 
         user = Message(
@@ -99,8 +99,11 @@ class TestCreateChunk:
             session_id="test",
         )
 
-        chunk = create_chunk(user, assistant)
+        exchanges = [(user, assistant)]
+        chunks = list(create_chunk_with_context(exchanges, 0))
 
+        assert len(chunks) == 1
+        chunk = chunks[0]
         assert chunk.id == "asst-uuid"  # Uses assistant UUID
         assert chunk.text == "User: What is Python?\n\nAssistant: Python is a programming language."
         assert chunk.timestamp == "2025-01-15T10:00:01Z"

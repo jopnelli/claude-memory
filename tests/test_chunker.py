@@ -57,19 +57,30 @@ class TestChunkConversation:
             assert chunk.session_id
 
     def test_chunk_long_conversation(self, long_conversation):
-        """Long conversation should produce multiple substantial chunks."""
-        from claude_memory.chunker import chunk_conversation
+        """Long conversation should produce multiple substantial chunks.
+
+        Note: With chunking improvements, long exchanges may be split into
+        multiple smaller chunks to fit within the embedding model's token limit.
+        """
+        from claude_memory.chunker import chunk_conversation, MAX_CHUNK_CHARS
 
         chunks = list(chunk_conversation(long_conversation))
 
-        # 6 exchanges = 6 chunks
-        assert len(chunks) == 6
+        # 6 exchanges, but long ones get split - expect >= 6 chunks
+        assert len(chunks) >= 6
 
-        # Each chunk should have substantial content
+        # Each chunk should have meaningful content but stay within limits
         for chunk in chunks:
-            assert len(chunk.text) > 200  # Meaningful content
-            assert "User:" in chunk.text
-            assert "Assistant:" in chunk.text
+            assert len(chunk.text) > 50  # Meaningful content
+            assert len(chunk.text) <= MAX_CHUNK_CHARS + 300  # Allow some buffer for overlap
+            # Note: Split chunks in the middle of an exchange may not have User:/Assistant: labels
+
+        # Verify split chunks have correct metadata
+        split_chunks = [c for c in chunks if c.total_chunks > 1]
+        for chunk in split_chunks:
+            assert chunk.parent_turn_id  # Should have parent reference
+            assert chunk.chunk_index >= 0
+            assert chunk.chunk_index < chunk.total_chunks
 
         # Total text should be substantial
         total_text = sum(len(c.text) for c in chunks)
@@ -345,3 +356,169 @@ class TestLoadAllChunks:
         # chunk-1 should have the last version (v2)
         chunk_1 = next(c for c in chunks if c.id == "chunk-1")
         assert "Hello v2" in chunk_1.text
+
+
+class TestRecursiveSplit:
+    """Tests for recursive_split function."""
+
+    def test_short_text_not_split(self):
+        """Text shorter than MAX_CHUNK_CHARS should not be split."""
+        from claude_memory.chunker import recursive_split, MAX_CHUNK_CHARS
+
+        short_text = "This is a short text."
+        assert len(short_text) < MAX_CHUNK_CHARS
+
+        parts = recursive_split(short_text)
+        assert len(parts) == 1
+        assert parts[0] == short_text
+
+    def test_long_text_split_at_paragraphs(self):
+        """Long text should be split at paragraph boundaries first."""
+        from claude_memory.chunker import recursive_split, MAX_CHUNK_CHARS
+
+        # Create text with paragraphs that exceeds MAX_CHUNK_CHARS
+        paragraph = "A" * 500  # 500 char paragraph
+        long_text = f"{paragraph}\n\n{paragraph}\n\n{paragraph}\n\n{paragraph}"
+        assert len(long_text) > MAX_CHUNK_CHARS
+
+        parts = recursive_split(long_text)
+        assert len(parts) > 1
+        # Each part should be under the limit
+        for part in parts:
+            assert len(part) <= MAX_CHUNK_CHARS
+
+    def test_long_text_split_at_lines(self):
+        """Text without paragraphs should split at line boundaries."""
+        from claude_memory.chunker import recursive_split, MAX_CHUNK_CHARS
+
+        # Create text with lines (no paragraph breaks)
+        line = "B" * 200  # 200 char line
+        long_text = "\n".join([line] * 10)  # 10 lines
+        assert len(long_text) > MAX_CHUNK_CHARS
+
+        parts = recursive_split(long_text)
+        assert len(parts) > 1
+        for part in parts:
+            assert len(part) <= MAX_CHUNK_CHARS
+
+    def test_long_text_split_at_sentences(self):
+        """Text without line breaks should split at sentences."""
+        from claude_memory.chunker import recursive_split, MAX_CHUNK_CHARS
+
+        # Create text with sentences (no line breaks)
+        sentence = "C" * 150  # 150 char sentence
+        long_text = ". ".join([sentence] * 15)  # Many sentences
+        assert len(long_text) > MAX_CHUNK_CHARS
+
+        parts = recursive_split(long_text)
+        assert len(parts) > 1
+        for part in parts:
+            assert len(part) <= MAX_CHUNK_CHARS
+
+    def test_very_long_word_hard_split(self):
+        """Single very long word should be hard split."""
+        from claude_memory.chunker import recursive_split, MAX_CHUNK_CHARS
+
+        # Create a single "word" longer than MAX_CHUNK_CHARS
+        very_long = "X" * (MAX_CHUNK_CHARS + 500)
+
+        parts = recursive_split(very_long)
+        assert len(parts) > 1
+        # All parts except possibly the last should be MAX_CHUNK_CHARS or less
+        for part in parts[:-1]:
+            assert len(part) <= MAX_CHUNK_CHARS
+
+
+class TestAddOverlap:
+    """Tests for add_overlap function."""
+
+    def test_single_chunk_no_overlap(self):
+        """Single chunk should not get overlap."""
+        from claude_memory.chunker import add_overlap
+
+        chunks = ["Only one chunk"]
+        result = add_overlap(chunks)
+        assert result == chunks
+
+    def test_two_chunks_get_overlap(self):
+        """Second chunk should have overlap from first."""
+        from claude_memory.chunker import add_overlap, OVERLAP_CHARS
+
+        chunks = ["First chunk with some content" * 50, "Second chunk starts here"]
+        result = add_overlap(chunks)
+
+        assert len(result) == 2
+        assert result[0] == chunks[0]  # First unchanged
+        # Second should start with end of first
+        assert result[1].startswith(chunks[0][-OVERLAP_CHARS:])
+
+    def test_empty_list(self):
+        """Empty list should return empty."""
+        from claude_memory.chunker import add_overlap
+
+        result = add_overlap([])
+        assert result == []
+
+
+class TestCreateChunksWithContext:
+    """Tests for create_chunks_with_context function."""
+
+    def test_short_exchange_single_chunk(self):
+        """Short exchange should produce single chunk."""
+        from claude_memory.chunker import create_chunks_with_context
+        from claude_memory.parser import Message
+
+        user = Message(
+            role="user",
+            content="Short question",
+            uuid="user-1",
+            timestamp="2025-01-15T10:00:00Z",
+            session_id="test",
+        )
+        assistant = Message(
+            role="assistant",
+            content="Short answer",
+            uuid="asst-1",
+            timestamp="2025-01-15T10:00:01Z",
+            session_id="test",
+        )
+
+        chunks = create_chunks_with_context([(user, assistant)], 0)
+
+        assert len(chunks) == 1
+        assert chunks[0].total_chunks == 1
+        assert chunks[0].parent_turn_id == ""  # Not split
+        assert chunks[0].id == "asst-1"
+
+    def test_long_exchange_multiple_chunks(self):
+        """Long exchange should produce multiple chunks with metadata."""
+        from claude_memory.chunker import create_chunks_with_context, MAX_CHUNK_CHARS
+        from claude_memory.parser import Message
+
+        # Create a very long response
+        long_response = "This is a very detailed response. " * 200  # ~6400 chars
+        assert len(long_response) > MAX_CHUNK_CHARS
+
+        user = Message(
+            role="user",
+            content="Tell me everything about this topic",
+            uuid="user-1",
+            timestamp="2025-01-15T10:00:00Z",
+            session_id="test",
+        )
+        assistant = Message(
+            role="assistant",
+            content=long_response,
+            uuid="asst-1",
+            timestamp="2025-01-15T10:00:01Z",
+            session_id="test",
+        )
+
+        chunks = create_chunks_with_context([(user, assistant)], 0)
+
+        assert len(chunks) > 1  # Should be split
+        for i, chunk in enumerate(chunks):
+            assert chunk.parent_turn_id == "asst-1"  # Track parent
+            assert chunk.chunk_index == i
+            assert chunk.total_chunks == len(chunks)
+            assert chunk.id == f"asst-1-{i}"  # Unique ID for each part

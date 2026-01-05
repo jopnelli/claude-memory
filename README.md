@@ -296,6 +296,10 @@ Turn 3 chunk contains:
   [Turn 4 - after]
 ```
 
+### Token-Aware Splitting
+
+The embedding model (`all-mpnet-base-v2`) has a 384 token limit (~1,500 chars). Long exchanges are automatically split at natural boundaries (paragraphs → lines → sentences) with 20% overlap for context continuity. Search results deduplicate by parent turn so you don't see multiple chunks from the same exchange.
+
 ### Conversation Summaries (Automatic)
 
 Summaries are generated automatically during sync when Ollama is available. Each conversation gets a 2-3 sentence summary for high-level search like "which conversations discussed database design?".

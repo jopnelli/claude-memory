@@ -13,27 +13,118 @@ from .parser import Message, get_conversation_files, parse_conversation
 CONTEXT_BEFORE = 1
 CONTEXT_AFTER = 1
 
+# Chunk size limits for embedding model compatibility
+# all-mpnet-base-v2 has a 384 token limit (~1,500 chars)
+# We use 1,400 chars as a safe margin (~310 tokens)
+MAX_CHUNK_CHARS = 1400
+OVERLAP_CHARS = 280  # 20% overlap for context continuity
+
+# Separators for recursive splitting, in order of preference
+SEPARATORS = ["\n\n", "\n", ". ", "! ", "? ", " "]
+
 # Messages to exclude (Claude's automatic initialization, not useful for search)
 EXCLUDED_USER_MESSAGES = {"warmup"}
+
+
+def recursive_split(text: str, separators: list[str] | None = None) -> list[str]:
+    """Split text recursively at natural boundaries to fit within MAX_CHUNK_CHARS.
+
+    Tries separators in order of preference (paragraphs -> lines -> sentences -> words).
+    Falls back to hard character split if no separator works.
+    """
+    if separators is None:
+        separators = SEPARATORS
+
+    if len(text) <= MAX_CHUNK_CHARS:
+        return [text]
+
+    # Try each separator in order
+    for sep in separators:
+        if sep in text:
+            parts = text.split(sep)
+            chunks = []
+            current = ""
+
+            for part in parts:
+                candidate = current + sep + part if current else part
+                if len(candidate) <= MAX_CHUNK_CHARS:
+                    current = candidate
+                else:
+                    if current:
+                        chunks.append(current)
+                    # If single part exceeds limit, try finer separator
+                    if len(part) > MAX_CHUNK_CHARS:
+                        remaining_seps = separators[separators.index(sep) + 1 :]
+                        if remaining_seps:
+                            chunks.extend(recursive_split(part, remaining_seps))
+                        else:
+                            # Hard split as last resort
+                            chunks.extend(
+                                part[i : i + MAX_CHUNK_CHARS]
+                                for i in range(
+                                    0, len(part), MAX_CHUNK_CHARS - OVERLAP_CHARS
+                                )
+                            )
+                    else:
+                        current = part
+
+            if current:
+                chunks.append(current)
+
+            return chunks if chunks else [text]
+
+    # Last resort: hard split by characters
+    return [
+        text[i : i + MAX_CHUNK_CHARS]
+        for i in range(0, len(text), MAX_CHUNK_CHARS - OVERLAP_CHARS)
+    ]
+
+
+def add_overlap(chunks: list[str], overlap: int = OVERLAP_CHARS) -> list[str]:
+    """Add overlap between chunks for context continuity.
+
+    Prepends the end of the previous chunk to each subsequent chunk,
+    helping preserve context across chunk boundaries.
+    """
+    if len(chunks) <= 1:
+        return chunks
+
+    result = [chunks[0]]
+    for i in range(1, len(chunks)):
+        # Prepend end of previous chunk
+        prev_overlap = chunks[i - 1][-overlap:] if len(chunks[i - 1]) > overlap else chunks[i - 1]
+        result.append(prev_overlap + " " + chunks[i])
+
+    return result
 
 
 @dataclass
 class Chunk:
     """A single chunk representing a user+assistant exchange or conversation summary."""
 
-    id: str  # UUID of the assistant message, or "summary-{session_id}"
+    id: str  # UUID of the assistant message, or "summary-{session_id}", or "{uuid}-{index}" for splits
     text: str  # Combined user + assistant text (with context), or summary
     timestamp: str  # Timestamp of last message in chunk
     session_id: str  # Links all chunks from same conversation
     chunk_type: Literal["turn", "summary"] = "turn"  # Type of chunk
     turn_index: int = 0  # Position in conversation (for turns)
+    # Fields for tracking split chunks (when a turn exceeds MAX_CHUNK_CHARS)
+    parent_turn_id: str = ""  # Original turn UUID (empty if not split)
+    chunk_index: int = 0  # Position within split (0, 1, 2...)
+    total_chunks: int = 1  # How many chunks this turn produced
 
 
-def create_chunk_with_context(
+def create_chunks_with_context(
     exchanges: list[tuple[Message, Message]],
     current_index: int,
-) -> Chunk:
-    """Create a chunk from a user+assistant pair with bidirectional context."""
+) -> list[Chunk]:
+    """Create chunk(s) from a user+assistant pair with bidirectional context.
+
+    If the combined text exceeds MAX_CHUNK_CHARS, splits into multiple chunks
+    while preserving natural boundaries and adding overlap for context continuity.
+
+    Returns a list of Chunk objects (usually 1, but may be more for long exchanges).
+    """
     user_msg, assistant_msg = exchanges[current_index]
     num_exchanges = len(exchanges)
 
@@ -58,13 +149,66 @@ def create_chunk_with_context(
     all_parts = before_parts + [current] + after_parts
     text = "\n\n---\n\n".join(all_parts)
 
+    base_id = assistant_msg.uuid
+
+    # If text fits in one chunk, return single chunk
+    if len(text) <= MAX_CHUNK_CHARS:
+        return [
+            Chunk(
+                id=base_id,
+                text=text,
+                timestamp=assistant_msg.timestamp,
+                session_id=assistant_msg.session_id,
+                chunk_type="turn",
+                turn_index=current_index,
+                parent_turn_id="",
+                chunk_index=0,
+                total_chunks=1,
+            )
+        ]
+
+    # Split and create multiple chunks
+    parts = add_overlap(recursive_split(text))
+    return [
+        Chunk(
+            id=f"{base_id}-{i}" if len(parts) > 1 else base_id,
+            text=part,
+            timestamp=assistant_msg.timestamp,
+            session_id=assistant_msg.session_id,
+            chunk_type="turn",
+            turn_index=current_index,
+            parent_turn_id=base_id,  # Track original turn
+            chunk_index=i,
+            total_chunks=len(parts),
+        )
+        for i, part in enumerate(parts)
+    ]
+
+
+# Backwards compatibility alias
+def create_chunk_with_context(
+    exchanges: list[tuple[Message, Message]],
+    current_index: int,
+) -> Chunk:
+    """Create a single chunk (legacy interface). Use create_chunks_with_context instead."""
+    chunks = create_chunks_with_context(exchanges, current_index)
+    return chunks[0]  # Return first chunk for backwards compatibility
+
+
+def create_chunk(user_msg: Message, assistant_msg: Message) -> Chunk:
+    """Create a simple chunk from a user+assistant pair without context.
+
+    This is a simpler interface for creating chunks without surrounding context.
+    Useful for tests and simple use cases.
+    """
+    text = f"User: {user_msg.content}\n\nAssistant: {assistant_msg.content}"
     return Chunk(
         id=assistant_msg.uuid,
         text=text,
         timestamp=assistant_msg.timestamp,
         session_id=assistant_msg.session_id,
         chunk_type="turn",
-        turn_index=current_index,
+        turn_index=0,
     )
 
 
@@ -75,7 +219,11 @@ def is_excluded_message(user_content: str) -> bool:
 
 
 def chunk_conversation(filepath: Path) -> Iterator[Chunk]:
-    """Chunk a conversation into user+assistant exchanges with context."""
+    """Chunk a conversation into user+assistant exchanges with context.
+
+    Long exchanges that exceed MAX_CHUNK_CHARS are automatically split into
+    multiple chunks with overlap for context continuity.
+    """
     messages = list(parse_conversation(filepath))
 
     # First pass: collect all exchanges (excluding warmup/init messages)
@@ -90,9 +238,9 @@ def chunk_conversation(filepath: Path) -> Iterator[Chunk]:
                 exchanges.append((user_msg, msg))
             user_msg = None
 
-    # Second pass: create chunks with context
+    # Second pass: create chunks with context (may produce multiple chunks per exchange)
     for i in range(len(exchanges)):
-        yield create_chunk_with_context(exchanges, i)
+        yield from create_chunks_with_context(exchanges, i)
 
 
 def load_processed() -> dict[str, str]:
@@ -181,7 +329,7 @@ def load_all_chunks() -> list[Chunk]:
     the last occurrence is kept. This makes the system robust to duplicate
     entries from multi-machine sync conflicts.
 
-    Handles both old format (without chunk_type/turn_index) and new format.
+    Handles both old format (without chunk_type/turn_index/split fields) and new format.
     """
     chunk_files = get_all_chunk_files()
     if not chunk_files:
@@ -199,9 +347,13 @@ def load_all_chunks() -> list[Chunk]:
                         text=data["text"],
                         timestamp=data["timestamp"],
                         session_id=data["session_id"],
-                        # New fields with defaults for backwards compatibility
+                        # Fields with defaults for backwards compatibility
                         chunk_type=data.get("chunk_type", "turn"),
                         turn_index=data.get("turn_index", 0),
+                        # New split-tracking fields (added for chunking improvements)
+                        parent_turn_id=data.get("parent_turn_id", ""),
+                        chunk_index=data.get("chunk_index", 0),
+                        total_chunks=data.get("total_chunks", 1),
                     )
                     chunks_by_id[chunk.id] = chunk
                 except (json.JSONDecodeError, KeyError):

@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Iterator, Literal
 
 from .config import CHUNKS_FILE, PROCESSED_FILE, ensure_dirs, get_all_chunk_files
-from .parser import Message, get_conversation_files, parse_conversation
+from .parser import (
+    Message,
+    get_conversation_files,
+    parse_conversation,
+    extract_files_from_tool_calls,
+    extract_commands_from_tool_calls,
+)
 
 
 # Context window: 1 turn before + 1 turn after for balanced bidirectional context
@@ -112,6 +118,10 @@ class Chunk:
     parent_turn_id: str = ""  # Original turn UUID (empty if not split)
     chunk_index: int = 0  # Position within split (0, 1, 2...)
     total_chunks: int = 1  # How many chunks this turn produced
+    # Tool metadata - enables filtering/search by tool usage
+    tools_used: str = ""  # Comma-separated tool names (e.g., "Read,Bash,Edit")
+    files_touched: str = ""  # Comma-separated file paths
+    commands_run: str = ""  # Comma-separated commands (truncated)
 
 
 def create_chunks_with_context(
@@ -151,6 +161,13 @@ def create_chunks_with_context(
 
     base_id = assistant_msg.uuid
 
+    # Extract tool metadata from the current turn's assistant message
+    tool_calls = assistant_msg.tool_calls
+    tools_used = ",".join(sorted(set(tc.name for tc in tool_calls))) if tool_calls else ""
+    files_touched = ",".join(sorted(extract_files_from_tool_calls(tool_calls))) if tool_calls else ""
+    commands = extract_commands_from_tool_calls(tool_calls) if tool_calls else []
+    commands_run = ",".join(commands[:5])  # Limit to 5 commands to avoid bloat
+
     # If text fits in one chunk, return single chunk
     if len(text) <= MAX_CHUNK_CHARS:
         return [
@@ -164,6 +181,9 @@ def create_chunks_with_context(
                 parent_turn_id="",
                 chunk_index=0,
                 total_chunks=1,
+                tools_used=tools_used,
+                files_touched=files_touched,
+                commands_run=commands_run,
             )
         ]
 
@@ -180,6 +200,9 @@ def create_chunks_with_context(
             parent_turn_id=base_id,  # Track original turn
             chunk_index=i,
             total_chunks=len(parts),
+            tools_used=tools_used,
+            files_touched=files_touched,
+            commands_run=commands_run,
         )
         for i, part in enumerate(parts)
     ]
@@ -350,10 +373,14 @@ def load_all_chunks() -> list[Chunk]:
                         # Fields with defaults for backwards compatibility
                         chunk_type=data.get("chunk_type", "turn"),
                         turn_index=data.get("turn_index", 0),
-                        # New split-tracking fields (added for chunking improvements)
+                        # Split-tracking fields
                         parent_turn_id=data.get("parent_turn_id", ""),
                         chunk_index=data.get("chunk_index", 0),
                         total_chunks=data.get("total_chunks", 1),
+                        # Tool metadata fields (new)
+                        tools_used=data.get("tools_used", ""),
+                        files_touched=data.get("files_touched", ""),
+                        commands_run=data.get("commands_run", ""),
                     )
                     chunks_by_id[chunk.id] = chunk
                 except (json.JSONDecodeError, KeyError):

@@ -22,6 +22,8 @@ claude-memory search "how did we handle auth"   # Search
 ## Features
 
 - **Semantic search** - Find by meaning, not just keywords
+- **Tool metadata** - Track which files and commands were used in each conversation
+- **Context expansion** - Show surrounding turns inline with `--context N`
 - **Token-aware chunking** - Splits long exchanges to fit embedding model limits
 - **Context windows** - Each chunk includes surrounding turns for better matching
 - **Conversation summaries** - Optional LLM-generated summaries via Ollama
@@ -44,7 +46,7 @@ claude-memory search "how did we handle auth"   # Search
 | Command | Description |
 |---------|-------------|
 | `sync` | Index new conversations |
-| `search "query"` | Semantic search (`-n 10` for more results) |
+| `search "query"` | Semantic search (`-n 10` for more, `-c 3` for context, `--tools`) |
 | `stats` | Show index statistics |
 | `rebuild` | Rebuild index from chunk files |
 | `summarize` | Generate summaries (requires Ollama) |
@@ -83,6 +85,28 @@ claude-memory summarize
 ```
 
 Once Ollama is available, `sync` auto-generates summaries for new conversations.
+
+## Context Expansion
+
+Expand search results with surrounding turns inline:
+
+```bash
+# Basic search
+claude-memory search "authentication bug"
+
+# Show 3 turns before/after each match
+claude-memory search "authentication bug" -c 3
+
+# Include tool calls in context
+claude-memory search "authentication bug" -c 3 --tools
+```
+
+Each indexed chunk also tracks:
+- **Tools used** - Which tools were called (Read, Bash, Edit, etc.)
+- **Files touched** - File paths from tool calls
+- **Commands run** - Bash commands executed
+
+This lets you find conversations by what was *done*, not just what was *said*.
 
 ## Claude Code Integration
 

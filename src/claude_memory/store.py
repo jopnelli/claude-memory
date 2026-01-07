@@ -39,6 +39,10 @@ class SearchResult:
     parent_turn_id: str = ""  # Original turn UUID (empty if not split)
     chunk_index: int = 0  # Position within split (0, 1, 2...)
     total_chunks: int = 1  # How many chunks this turn produced
+    # Tool metadata
+    tools_used: str = ""  # Comma-separated tool names
+    files_touched: str = ""  # Comma-separated file paths
+    commands_run: str = ""  # Comma-separated commands
 
 
 class Store:
@@ -88,10 +92,14 @@ class Store:
                         "timestamp": c.timestamp,
                         "chunk_type": c.chunk_type,
                         "turn_index": c.turn_index,
-                        # New fields for split chunk tracking
+                        # Split chunk tracking
                         "parent_turn_id": c.parent_turn_id,
                         "chunk_index": c.chunk_index,
                         "total_chunks": c.total_chunks,
+                        # Tool metadata
+                        "tools_used": c.tools_used,
+                        "files_touched": c.files_touched,
+                        "commands_run": c.commands_run,
                     }
                     for c in batch
                 ],
@@ -138,6 +146,9 @@ class Store:
                         parent_turn_id=metadata.get("parent_turn_id", ""),
                         chunk_index=metadata.get("chunk_index", 0),
                         total_chunks=metadata.get("total_chunks", 1),
+                        tools_used=metadata.get("tools_used", ""),
+                        files_touched=metadata.get("files_touched", ""),
+                        commands_run=metadata.get("commands_run", ""),
                     )
                 )
 

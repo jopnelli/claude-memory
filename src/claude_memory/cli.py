@@ -5,6 +5,7 @@ import click
 from .chunker import sync_chunks, load_all_chunks
 from .store import Store, get_indexed_count
 from .summarizer import sync_summaries, is_ollama_available, DEFAULT_MODEL
+from .parser import get_context_around
 from .config import (
     CHUNKS_FILE,
     CHROMA_DIR,
@@ -74,7 +75,10 @@ def sync(quiet: bool, no_summaries: bool):
 @cli.command()
 @click.argument("query")
 @click.option("-n", "--num-results", default=5, help="Number of results to return")
-def search(query: str, num_results: int):
+@click.option("-v", "--verbose", is_flag=True, help="Show tool metadata")
+@click.option("-c", "--context", default=0, help="Show N turns before/after each result")
+@click.option("--tools", is_flag=True, help="Show tool calls in context (requires -c)")
+def search(query: str, num_results: int, verbose: bool, context: int, tools: bool):
     """Search conversations for relevant context."""
     store = Store()
 
@@ -94,8 +98,52 @@ def search(query: str, num_results: int):
         click.echo(f"Result {i} [{type_label}] (distance: {result.distance:.4f})")
         click.echo(f"Session: {result.session_id}")
         click.echo(f"Time: {result.timestamp}")
+
+        # Show tool metadata if present and verbose
+        if verbose or result.tools_used or result.files_touched:
+            if result.tools_used:
+                click.echo(f"Tools: {result.tools_used}")
+            if result.files_touched:
+                click.echo(f"Files: {result.files_touched}")
+            if result.commands_run and verbose:
+                click.echo(f"Commands: {result.commands_run[:100]}...")
+
         click.echo(f"{'='*60}")
-        click.echo(result.text)
+
+        # Show context if requested
+        if context > 0:
+            messages = get_context_around(result.session_id, result.timestamp, n=context)
+            if messages:
+                for msg in messages:
+                    role_label = "User" if msg.role == "user" else "Assistant"
+                    # Highlight the matched turn
+                    is_match = msg.timestamp == result.timestamp
+                    marker = ">>>" if is_match else "   "
+                    click.echo(f"\n{marker} [{role_label}] {msg.timestamp}")
+                    click.echo(f"    {'-'*40}")
+
+                    # Show text content (truncated)
+                    if msg.content:
+                        content = msg.content
+                        if len(content) > 500 and not is_match:
+                            content = content[:500] + "..."
+                        for line in content.split('\n'):
+                            click.echo(f"    {line}")
+
+                    # Show tool calls if requested
+                    if tools and msg.tool_calls:
+                        for tc in msg.tool_calls:
+                            click.echo(f"    🔧 {tc.name}", nl=False)
+                            if "file_path" in tc.input:
+                                click.echo(f" → {tc.input['file_path']}")
+                            elif "command" in tc.input:
+                                cmd = tc.input['command'][:60] + "..." if len(tc.input['command']) > 60 else tc.input['command']
+                                click.echo(f" → {cmd}")
+                            else:
+                                click.echo()
+        else:
+            # Just show the matched chunk text
+            click.echo(result.text)
 
 
 @cli.command()

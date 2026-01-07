@@ -4,6 +4,7 @@ import click
 
 from .chunker import sync_chunks, load_all_chunks
 from .store import Store, get_indexed_count
+from .text_index import TextIndex
 from .summarizer import sync_summaries, is_ollama_available, DEFAULT_MODEL
 from .parser import get_context_around
 from .config import (
@@ -61,24 +62,34 @@ def sync(quiet: bool, no_summaries: bool):
         log(f"  Index out of sync ({len(chunks)} chunks, {indexed_count} indexed)")
 
     # Only load embedding model if we have work to do
-    log("Updating index...")
+    log("Updating vector index...")
     store = Store()
     indexed = store.rebuild_index()
     if indexed > 0:
         log(f"  Indexed {indexed} new chunks")
     else:
-        log("  Index up to date")
+        log("  Vector index up to date")
 
-    log(f"Total: {store.count()} chunks indexed")
+    # Update text index for hybrid search (BM25)
+    log("Updating text index...")
+    chunks = load_all_chunks()
+    text_index = TextIndex()
+    text_indexed = text_index.add_batch([
+        (c.id, c.text, c.session_id, c.timestamp) for c in chunks
+    ])
+    if text_indexed > 0:
+        log(f"  Indexed {text_indexed} chunks for keyword search")
+    else:
+        log("  Text index up to date")
+
+    log(f"Total: {store.count()} chunks indexed (vector + keyword)")
 
 
 @cli.command()
 @click.argument("query")
-@click.option("-n", "--num-results", default=5, help="Number of results to return")
-@click.option("-v", "--verbose", is_flag=True, help="Show tool metadata")
-@click.option("-c", "--context", default=0, help="Show N turns before/after each result")
-@click.option("--tools", is_flag=True, help="Show tool calls in context (requires -c)")
-def search(query: str, num_results: int, verbose: bool, context: int, tools: bool):
+@click.option("-n", "--num-results", default=5, help="Number of results (default: 5)")
+@click.option("-c", "--context", default=1, help="Turns before/after each result (default: 1)")
+def search(query: str, num_results: int, context: int):
     """Search conversations for relevant context."""
     store = Store()
 
@@ -99,14 +110,11 @@ def search(query: str, num_results: int, verbose: bool, context: int, tools: boo
         click.echo(f"Session: {result.session_id}")
         click.echo(f"Time: {result.timestamp}")
 
-        # Show tool metadata if present and verbose
-        if verbose or result.tools_used or result.files_touched:
-            if result.tools_used:
-                click.echo(f"Tools: {result.tools_used}")
-            if result.files_touched:
-                click.echo(f"Files: {result.files_touched}")
-            if result.commands_run and verbose:
-                click.echo(f"Commands: {result.commands_run[:100]}...")
+        # Show tool metadata if present
+        if result.tools_used:
+            click.echo(f"Tools: {result.tools_used}")
+        if result.files_touched:
+            click.echo(f"Files: {result.files_touched}")
 
         click.echo(f"{'='*60}")
 
@@ -130,8 +138,8 @@ def search(query: str, num_results: int, verbose: bool, context: int, tools: boo
                         for line in content.split('\n'):
                             click.echo(f"    {line}")
 
-                    # Show tool calls if requested
-                    if tools and msg.tool_calls:
+                    # Show tool calls
+                    if msg.tool_calls:
                         for tc in msg.tool_calls:
                             click.echo(f"    🔧 {tc.name}", nl=False)
                             if "file_path" in tc.input:
@@ -141,6 +149,10 @@ def search(query: str, num_results: int, verbose: bool, context: int, tools: boo
                                 click.echo(f" → {cmd}")
                             else:
                                 click.echo()
+            else:
+                # Original conversation file not found (deleted or moved)
+                click.echo("(Context unavailable - original conversation not found)")
+                click.echo(result.text)
         else:
             # Just show the matched chunk text
             click.echo(result.text)

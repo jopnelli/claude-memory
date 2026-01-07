@@ -50,6 +50,12 @@ def long_conversation(fixtures_dir):
 
 
 @pytest.fixture
+def with_rich_tool_calls(fixtures_dir):
+    """Path to conversation with rich tool usage fixture."""
+    return fixtures_dir / "with-rich-tool-calls.jsonl"
+
+
+@pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:

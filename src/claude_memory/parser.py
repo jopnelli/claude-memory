@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
-from .config import get_project_dirs, PROJECT_DIR
+from .config import get_project_dirs
 
 
 @dataclass
@@ -224,10 +224,14 @@ def parse_all_conversations() -> Iterator[Message]:
 
 
 def find_conversation_file(session_id: str) -> Path | None:
-    """Find the .jsonl file for a given session ID."""
-    for filepath in get_conversation_files():
-        if filepath.stem == session_id:
-            return filepath
+    """Find the .jsonl file for a given session ID.
+
+    Uses direct path construction instead of iterating all files for O(1) lookup.
+    """
+    for project_dir in get_project_dirs():
+        path = project_dir / f"{session_id}.jsonl"
+        if path.exists():
+            return path
     return None
 
 

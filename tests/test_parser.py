@@ -3,8 +3,15 @@
 import pytest
 from claude_memory.parser import (
     Message,
+    ToolCall,
     extract_text_content,
+    extract_tool_calls,
+    extract_tool_results,
+    extract_files_from_tool_calls,
+    extract_commands_from_tool_calls,
     parse_conversation,
+    find_conversation_file,
+    get_context_around,
 )
 
 
@@ -165,3 +172,209 @@ class TestParseConversation:
         for msg in code_messages:
             # Every opening ``` should have a closing ```
             assert msg.content.count("```") % 2 == 0
+
+
+class TestExtractToolCalls:
+    """Tests for extract_tool_calls function."""
+
+    def test_extract_single_tool_call(self):
+        """Extract a single tool call from assistant message."""
+        data = {
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/foo.py"}},
+                    {"type": "text", "text": "Reading file."},
+                ]
+            }
+        }
+        tool_calls = extract_tool_calls(data)
+        assert len(tool_calls) == 1
+        assert tool_calls[0].name == "Read"
+        assert tool_calls[0].input == {"file_path": "/foo.py"}
+        assert tool_calls[0].id == "t1"
+
+    def test_extract_multiple_tool_calls(self):
+        """Extract multiple tool calls from a single message."""
+        data = {
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py"}},
+                    {"type": "tool_use", "id": "t2", "name": "Bash", "input": {"command": "ls -la"}},
+                    {"type": "tool_use", "id": "t3", "name": "Edit", "input": {"file_path": "/b.py"}},
+                    {"type": "text", "text": "Done."},
+                ]
+            }
+        }
+        tool_calls = extract_tool_calls(data)
+        assert len(tool_calls) == 3
+        assert [tc.name for tc in tool_calls] == ["Read", "Bash", "Edit"]
+
+    def test_no_tool_calls(self):
+        """Message with only text has no tool calls."""
+        data = {"message": {"content": [{"type": "text", "text": "Just text."}]}}
+        assert extract_tool_calls(data) == []
+
+    def test_string_content_no_tool_calls(self):
+        """User message with string content has no tool calls."""
+        data = {"message": {"content": "Hello"}}
+        assert extract_tool_calls(data) == []
+
+
+class TestExtractToolResults:
+    """Tests for extract_tool_results function."""
+
+    def test_extract_tool_result(self):
+        """Extract tool result from user message."""
+        data = {
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "File contents here"}
+                ]
+            }
+        }
+        results = extract_tool_results(data)
+        assert len(results) == 1
+        assert results[0].tool_use_id == "t1"
+        assert results[0].content == "File contents here"
+        assert results[0].is_error is False
+
+    def test_extract_error_result(self):
+        """Extract error tool result."""
+        data = {
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "Error!", "is_error": True}
+                ]
+            }
+        }
+        results = extract_tool_results(data)
+        assert len(results) == 1
+        assert results[0].is_error is True
+
+    def test_extract_nested_content_result(self):
+        """Extract tool result with nested content blocks."""
+        data = {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": [
+                            {"type": "text", "text": "First part"},
+                            {"type": "text", "text": "Second part"},
+                        ]
+                    }
+                ]
+            }
+        }
+        results = extract_tool_results(data)
+        assert len(results) == 1
+        assert results[0].content == "First part\nSecond part"
+
+
+class TestExtractFilesFromToolCalls:
+    """Tests for extract_files_from_tool_calls function."""
+
+    def test_extract_file_path(self):
+        """Extract file_path from Read/Write/Edit tools."""
+        tool_calls = [
+            ToolCall(name="Read", input={"file_path": "/src/main.py"}, id="t1"),
+            ToolCall(name="Edit", input={"file_path": "/src/utils.py"}, id="t2"),
+        ]
+        files = extract_files_from_tool_calls(tool_calls)
+        assert files == {"/src/main.py", "/src/utils.py"}
+
+    def test_extract_path_from_grep(self):
+        """Extract path from Grep tool."""
+        tool_calls = [
+            ToolCall(name="Grep", input={"pattern": "TODO", "path": "/project"}, id="t1"),
+        ]
+        files = extract_files_from_tool_calls(tool_calls)
+        assert "/project" in files
+
+    def test_extract_quoted_paths_from_bash(self):
+        """Extract quoted file paths from Bash commands."""
+        tool_calls = [
+            ToolCall(name="Bash", input={"command": 'cat "/path/to/file.txt"'}, id="t1"),
+            ToolCall(name="Bash", input={"command": "python 'script.py'"}, id="t2"),
+        ]
+        files = extract_files_from_tool_calls(tool_calls)
+        assert "/path/to/file.txt" in files
+        assert "script.py" in files
+
+    def test_empty_tool_calls(self):
+        """Empty tool calls list returns empty set."""
+        assert extract_files_from_tool_calls([]) == set()
+
+
+class TestExtractCommandsFromToolCalls:
+    """Tests for extract_commands_from_tool_calls function."""
+
+    def test_extract_bash_commands(self):
+        """Extract commands from Bash tool calls."""
+        tool_calls = [
+            ToolCall(name="Bash", input={"command": "ls -la"}, id="t1"),
+            ToolCall(name="Bash", input={"command": "git status"}, id="t2"),
+        ]
+        commands = extract_commands_from_tool_calls(tool_calls)
+        assert commands == ["ls -la", "git status"]
+
+    def test_truncate_long_commands(self):
+        """Long commands are truncated."""
+        long_cmd = "x" * 300  # Exceeds 200 char limit
+        tool_calls = [ToolCall(name="Bash", input={"command": long_cmd}, id="t1")]
+        commands = extract_commands_from_tool_calls(tool_calls)
+        assert len(commands[0]) == 203  # 200 + "..."
+        assert commands[0].endswith("...")
+
+    def test_skip_non_bash(self):
+        """Non-Bash tools are skipped."""
+        tool_calls = [
+            ToolCall(name="Read", input={"file_path": "/foo.py"}, id="t1"),
+            ToolCall(name="Bash", input={"command": "echo hi"}, id="t2"),
+        ]
+        commands = extract_commands_from_tool_calls(tool_calls)
+        assert commands == ["echo hi"]
+
+
+class TestParseConversationWithTools:
+    """Tests for parsing conversations with tool metadata."""
+
+    def test_parse_extracts_tool_calls(self, with_rich_tool_calls):
+        """Parsing should extract tool calls from assistant messages."""
+        messages = list(parse_conversation(with_rich_tool_calls))
+        assistant_msgs = [m for m in messages if m.role == "assistant"]
+
+        # First assistant message has Read and Bash tool calls
+        first_asst = assistant_msgs[0]
+        assert len(first_asst.tool_calls) == 2
+        tool_names = [tc.name for tc in first_asst.tool_calls]
+        assert "Read" in tool_names
+        assert "Bash" in tool_names
+
+    def test_tool_calls_have_correct_input(self, with_rich_tool_calls):
+        """Tool calls should have correct input data."""
+        messages = list(parse_conversation(with_rich_tool_calls))
+        assistant_msgs = [m for m in messages if m.role == "assistant"]
+
+        first_asst = assistant_msgs[0]
+        read_call = next(tc for tc in first_asst.tool_calls if tc.name == "Read")
+        assert read_call.input["file_path"] == "/project/config.json"
+
+
+class TestFindConversationFile:
+    """Tests for find_conversation_file function."""
+
+    def test_find_nonexistent_session(self):
+        """Nonexistent session returns None."""
+        result = find_conversation_file("nonexistent-session-id-12345")
+        assert result is None
+
+
+class TestGetContextAround:
+    """Tests for get_context_around function."""
+
+    def test_context_for_nonexistent_session(self):
+        """Nonexistent session returns empty list."""
+        result = get_context_around("nonexistent-session", "2025-01-01T00:00:00Z", n=2)
+        assert result == []

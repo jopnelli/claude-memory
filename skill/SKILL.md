@@ -7,7 +7,7 @@ description: Semantic search across past Claude Code conversations. This skill s
 
 ## Overview
 
-Search and retrieve context from past Claude Code conversations using semantic similarity. The `claude-memory` CLI indexes conversation history and enables natural language queries to find relevant prior discussions.
+Search past Claude Code conversations using hybrid search (semantic vectors + BM25 keyword matching). Find relevant prior discussions even if you only remember the topic or exact terms.
 
 ## When to Use
 
@@ -16,46 +16,56 @@ Search and retrieve context from past Claude Code conversations using semantic s
 - When user references past work that isn't in current context
 - User mentions something that seems to relate to previous conversations
 
-## Commands
+## Search Command
 
 ```bash
-# Search for relevant past conversations
-claude-memory search "query" [-n NUM_RESULTS]
-
-# Sync new conversations to the index (usually runs automatically)
-claude-memory sync
-
-# Show index statistics
-claude-memory stats
-
-# Force rebuild the index
-claude-memory rebuild
-
-# Show configuration
-claude-memory config
+claude-memory search "query" [-n NUM] [-c CONTEXT]
 ```
 
-## Usage Pattern
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n` | 5 | Number of results |
+| `-c` | 1 | Turns of context before/after each result |
 
-1. **Search first**: Run `claude-memory search "topic"` to find relevant context
-2. **Review results**: Each result shows the conversation excerpt, session ID, timestamp, and similarity distance (lower = more relevant)
-3. **Use context**: Incorporate findings into your response or decision-making
-
-## Example
+## Examples
 
 ```bash
-# User asks: "How did we set up the authentication?"
-claude-memory search "authentication setup" -n 3
+# Basic search
+claude-memory search "authentication setup"
+
+# More results with extra context
+claude-memory search "how did we handle the JWT bug" -n 10 -c 3
+
+# Find by exact class/function name (BM25 catches this)
+claude-memory search "UserService refactor"
 ```
 
-This returns the most relevant past conversations about authentication, including decisions made, alternatives considered, and implementation details.
+## Reading Results
+
+Each result includes:
+
+- **Conversation excerpt** with surrounding context
+- **Session ID** and **timestamp**
+- **Distance score** (lower = more relevant)
+- **Tools used** (Read, Bash, Edit, etc.)
+- **Files touched** from tool calls
+
+The tool metadata helps find conversations by what was *done*, not just what was *said*.
+
+## Hybrid Search
+
+Queries use both semantic similarity and keyword matching:
+
+| Query type | Vectors find | BM25 catches |
+|------------|--------------|--------------|
+| Topic | Related discussions | — |
+| Exact term | Related discussions | Exact matches |
+| Class name | Code discussions | Exact "ClassName" |
+
+This means you'll find results whether you remember exact terms or just the general topic.
 
 ## Notes
 
-- Results are ranked by semantic similarity, not just keyword matching
-- Lower distance scores indicate higher relevance
-- The index auto-syncs via Claude Code hooks:
-  - `SessionStart`: Catches up on missed syncs
-  - `PreCompact`: Indexes chunks before context compaction (prevents data loss)
-  - `SessionEnd`: Final sync when session ends
+- The index auto-syncs via Claude Code hooks (SessionStart, PreCompact, SessionEnd)
 - If no results found, run `claude-memory sync` first
+- Use `-c 3` or higher when you need more surrounding context
